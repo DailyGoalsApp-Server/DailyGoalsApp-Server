@@ -1,4 +1,10 @@
+<<<<<<< HEAD
 __pycache__
 .env
 instance
 generator
+=======
+__pycache__
+.env
+instance
+>>>>>>> be0151f589674fafe515e70ef727becba1049aeb
