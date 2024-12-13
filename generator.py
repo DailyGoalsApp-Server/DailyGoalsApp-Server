@@ -1,4 +1,4 @@
-from threading import Lock, RLock
+from threading import RLock
 from concurrent.futures import ThreadPoolExecutor
 import json, random, os
 from dotenv import load_dotenv
