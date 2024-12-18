@@ -156,10 +156,21 @@ def draw(sex, age_range, intensity, height_range, weight_range):
         new_challenge = generate(sex, age_range, intensity, height_range, weight_range)
         with get_or_create_lock(sex + age_range + intensity + height_range + weight_range, write_lock=True):
             challenges_dict.update(new_challenge)
+        filtered_challenges = new_challenge
         return {
             "task": list(new_challenge.values())[0]['task'],
             "hints": list(new_challenge.values())[0]['hints']
         }
+        
+    if len(filtered_challenges) < 10:
+        times = 10 - len(filtered_challenges)
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = [executor.submit(generate, sex, age_range, intensity, height_range, weight_range) for _ in range(times)]
+            for future in futures:
+                new_challenge = future.result()
+                with get_or_create_lock(sex + age_range + intensity, write_lock=True):  # 寫鎖，保證更新
+                    challenges_dict.update(new_challenge)
+        
 
     random_key = random.choice(list(filtered_challenges.keys()))
     challenge = challenges_dict[random_key]
