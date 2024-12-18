@@ -27,11 +27,11 @@ def generate():
 
         # 生成任务的逻辑 (示例返回固定结果)
         task = result['task']
-        hint = result['hint']
+        hints = result['hints']
         
         response = {
             "task": task,
-            "hints": hint
+            "hints": hints
         }
         
         return jsonify(response), 200  
