@@ -34,20 +34,20 @@ def get_or_create_lock(challenge_id, write_lock=False):
 
 class Challenge(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    task_content = db.Column(db.String(200), nullable=False)
-    hint_content = db.Column(db.Text, nullable=False)
+    task = db.Column(db.String(200), nullable=False)
+    hints = db.Column(db.Text, nullable=False)
     intensity = db.Column(db.String(20), nullable=False)
     age_range = db.Column(db.String(20))
     sex = db.Column(db.String(5), nullable=False)
 
     def __repr__(self):
-        return f"<Challenge {self.id}, Task: {self.task_content}>"
+        return f"<Challenge {self.id}, Task: {self.task}>"
 
 def read_db():
     challenges = Challenge.query.all()
     challenges_dict = {challenge.id: {
-        "task_content": challenge.task_content,
-        "hint_content": json.loads(challenge.hint_content),
+        "task": challenge.task,
+        "hints": json.loads(challenge.hints),
         "intensity": challenge.intensity,
         "age_range": challenge.age_range,
         "sex": challenge.sex,
@@ -87,31 +87,38 @@ def generate(sex, age_range, intensity):
         response = model.generate_content(prompt, generation_config=generation_config)
         response_text = response.text.replace("```json", "").replace("```", "")
         data = json.loads(response_text)
-        task_content = data["TASK"]["content"]
-        hint_content = data["HINT"]["content"]
+        task = data["TASK"]["content"]
+        hints = data["HINT"]["content"]
     except Exception as e:
         logging.error(f"Failed to generate challenge: {e}")
+        return None
+
+    if not task or not hints:
+        logging.error("Generated challenge is incomplete.")
+        return None
 
     with app.app_context(): 
-        id = write_db(sex, age_range, intensity, task_content, hint_content)
+        id = write_db(sex, age_range, intensity, task, hints)
         
     challenge_data = {
-        "task_content": task_content,
-        "hint_content": hint_content,
-        "intensity": intensity,
-        "age_range": age_range,
-        "sex": sex,
-        "times": 4
+        'task': task,
+        'hints': hints,
+        'intensity': intensity,
+        'age_range': age_range,
+        'sex': sex,
+        'times': 4
     }
-    challenges_dict[id] = challenge_data
-    print("生成成功")
+
+    with get_or_create_lock(sex + age_range + intensity, write_lock=True):
+        challenges_dict[id] = challenge_data
+
     return {id: challenge_data}
 
-def write_db(sex, age_range, intensity, task_content, hint_content):
-    hint_content_str = json.dumps(hint_content)  
+def write_db(sex, age_range, intensity, task, hints):
+    hints_str = json.dumps(hints)  
     new_challenge = Challenge(
-        task_content=task_content,
-        hint_content=hint_content_str,
+        task=task,
+        hints=hints_str,
         intensity=intensity,
         age_range=age_range,
         sex=sex
@@ -134,46 +141,31 @@ def draw(sex, age_range, intensity):
         key: value for key, value in challenges_dict.items()
         if value['sex'] == sex and value['age_range'] == age_range and value['intensity'] == intensity
     }
-    print(len(filtered_challenges) )
 
     if len(filtered_challenges) == 0:
         new_challenge = generate(sex, age_range, intensity)
-        with get_or_create_lock(sex + age_range + intensity, write_lock=True):  # 使用寫鎖，防止多線程寫入
-            print("lock 1")
+        with get_or_create_lock(sex + age_range + intensity, write_lock=True):
             challenges_dict.update(new_challenge)
-        print("lock 1 relese")
-        filtered_challenges = new_challenge
-        return {"task": challenge['task_content'], "hint": challenge['hint_content']}
-
-
-    if len(filtered_challenges) < 10:
-        times = 10 - len(filtered_challenges)
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            futures = [executor.submit(generate, sex, age_range, intensity) for _ in range(times)]
-            for future in futures:
-                new_challenge = future.result()
-                with get_or_create_lock(sex + age_range + intensity, write_lock=True):  # 寫鎖，保證更新
-                    print("lock 2")
-                    challenges_dict.update(new_challenge)
-                    print("lock 2 relese")
-
+        return {
+            "task": list(new_challenge.values())[0]['task'],
+            "hints": list(new_challenge.values())[0]['hints']
+        }
 
     random_key = random.choice(list(filtered_challenges.keys()))
     challenge = challenges_dict[random_key]
 
-    with get_or_create_lock(random_key): 
-        print("lock 3")
+    with get_or_create_lock(random_key):
         challenges_dict[random_key]["times"] -= 1
         if challenges_dict[random_key]["times"] < 1:
             delete_expired_challenges()
-            future = generate(sex, age_range, intensity)
-            challenges_dict.update(future)
-        print("lock 3 relese")
+            new_challenge = generate(sex, age_range, intensity)
+            challenges_dict.update(new_challenge)
 
-    return {"task": challenge['task_content'], "hint": challenge['hint_content']}
+    return {"task": challenge['task'], "hints": challenge['hints']}
+
 
 if __name__ == "__main__":
     with app.app_context():
         data = draw(sex="女性", age_range="15-20", intensity="低強度")
         print(data['task'])
-        print(data['hint'])
+        print(data['hints'])
