@@ -36,8 +36,10 @@ class Challenge(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     task = db.Column(db.String(200), nullable=False)
     hints = db.Column(db.Text, nullable=False)
-    intensity = db.Column(db.String(20), nullable=False)
-    age_range = db.Column(db.String(20))
+    intensity = db.Column(db.String(10), nullable=False)
+    age_range = db.Column(db.String(10))
+    height_range = db.Column(db.String(10))
+    weight_range = db.Column(db.String(10))
     sex = db.Column(db.String(5), nullable=False)
 
     def __repr__(self):
@@ -50,6 +52,8 @@ def read_db():
         "hints": json.loads(challenge.hints),
         "intensity": challenge.intensity,
         "age_range": challenge.age_range,
+        "height_range": challenge.height_range,
+        "weight_range": challenge.weight_range,
         "sex": challenge.sex,
         "times": 3
     } for challenge in challenges}
@@ -61,7 +65,7 @@ with app.app_context():
     db.create_all()
     challenges_dict = read_db()
 
-def generate(sex, age_range, intensity):
+def generate(sex, age_range, intensity, height_range, weight_range):
     dietary_challenge_list = ["飲食", "喝水", "蔬菜攝入", "減糖", "低GI", "水果攝入", "低卡餐"]
     sport_challenge_list = ["運動", "快走", "慢跑", "瑜伽", "力量訓練", "爬樓梯", "自行車"]
     challenge_type = random.choice(["運動", "飲食", "生活習慣"])
@@ -74,7 +78,7 @@ def generate(sex, age_range, intensity):
         challenge = "生活習慣"
 
     prompt = (
-        f"請設計一個一日可完成的{challenge}小挑戰，只需要完成一件事。挑戰對象為{age_range}{sex}，平常運動強度為{intensity}，該挑戰需對於挑戰對象來說是可達成的。"
+        f"請設計一個一日可完成的{challenge}小挑戰，只需要完成一件事。挑戰對象為一位身高{height_range}公分、體重{weight_range}公斤、年齡{age_range}的{sex}，平常運動強度為{intensity}，該挑戰需對於挑戰對象來說是可達成的。"
         f"請以JSON格式輸出，格式為：{{\"TASK\":{{\"content\":\"挑戰內容\"}}, \"HINT\":{{\"content\":[\"提示1\",\"提示2\",...]}}}}。"
         f"生成內容請控制在200個字內。"
     )
@@ -97,30 +101,35 @@ def generate(sex, age_range, intensity):
         logging.error("Generated challenge is incomplete.")
         return None
 
-    with app.app_context(): 
-        id = write_db(sex, age_range, intensity, task, hints)
+    with app.app_context():
+        id = write_db(task, hints, sex, age_range, intensity, height_range, weight_range)
         
     challenge_data = {
         'task': task,
         'hints': hints,
         'intensity': intensity,
         'age_range': age_range,
+        'height_range': height_range,
+        'weight_range': weight_range,
         'sex': sex,
         'times': 4
     }
 
-    with get_or_create_lock(sex + age_range + intensity, write_lock=True):
+    with get_or_create_lock(sex + age_range + intensity + height_range + weight_range, write_lock=True):
         challenges_dict[id] = challenge_data
 
     return {id: challenge_data}
 
-def write_db(sex, age_range, intensity, task, hints):
+
+def write_db(task, hints,sex, age_range, intensity,height_range,weight_range):
     hints_str = json.dumps(hints)  
     new_challenge = Challenge(
         task=task,
         hints=hints_str,
         intensity=intensity,
         age_range=age_range,
+        height_range = height_range,
+        weight_range = weight_range,
         sex=sex
     )
     db.session.add(new_challenge)
@@ -134,17 +143,18 @@ def delete_expired_challenges():
     db.session.commit()
     logging.info(f"Deleted {len(expired_challenges)} expired challenges.")
 
-def draw(sex, age_range, intensity):
+def draw(sex, age_range, intensity, height_range, weight_range):
     global challenges_dict
 
     filtered_challenges = {
         key: value for key, value in challenges_dict.items()
-        if value['sex'] == sex and value['age_range'] == age_range and value['intensity'] == intensity
+        if value['sex'] == sex and value['age_range'] == age_range and value['intensity'] == intensity 
+            and value['height_range'] == height_range and value['weight_range'] == weight_range
     }
 
     if len(filtered_challenges) == 0:
-        new_challenge = generate(sex, age_range, intensity)
-        with get_or_create_lock(sex + age_range + intensity, write_lock=True):
+        new_challenge = generate(sex, age_range, intensity, height_range, weight_range)
+        with get_or_create_lock(sex + age_range + intensity + height_range + weight_range, write_lock=True):
             challenges_dict.update(new_challenge)
         return {
             "task": list(new_challenge.values())[0]['task'],
@@ -158,7 +168,7 @@ def draw(sex, age_range, intensity):
         challenges_dict[random_key]["times"] -= 1
         if challenges_dict[random_key]["times"] < 1:
             delete_expired_challenges()
-            new_challenge = generate(sex, age_range, intensity)
+            new_challenge = generate(sex, age_range, intensity, height_range, weight_range)
             challenges_dict.update(new_challenge)
 
     return {"task": challenge['task'], "hints": challenge['hints']}
@@ -166,6 +176,6 @@ def draw(sex, age_range, intensity):
 
 if __name__ == "__main__":
     with app.app_context():
-        data = draw(sex="女性", age_range="15-20", intensity="低強度")
+        data = draw(sex="女性", age_range="15-20", intensity="低強度",weight_range = "155-159",height_range = "55-60")
         print(data['task'])
         print(data['hints'])

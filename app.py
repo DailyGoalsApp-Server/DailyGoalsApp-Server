@@ -18,12 +18,15 @@ def generate():
         sex = data.get("sex")
         age_range = data.get("age_range")
         intensity = data.get("intensity")
+        height_range= data.get("height_range")
+        weight_range = data.get("weight_range")
+
         print(intensity)
         
-        if not sex or not age_range or not intensity:
+        if not sex or not age_range or not intensity or not height_range or not weight_range:
             return jsonify({"error": "Missing required fields (sex, age_range, intensity)"}), 400
         
-        result = draw(sex, age_range, intensity)
+        result = draw(sex, age_range, intensity,height_range,weight_range)
 
         # 生成任务的逻辑 (示例返回固定结果)
         task = result['task']
